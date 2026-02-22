@@ -3,7 +3,7 @@ lazy val `sbt-js-engine` = project in file(".")
 enablePlugins(SbtWebBase)
 
 lazy val scala212 = "2.12.21"
-lazy val scala3 = "3.7.2"
+lazy val scala3 = "3.7.4"
 ThisBuild / crossScalaVersions := Seq(scala212, scala3)
 
 description := "sbt js engine plugin"
