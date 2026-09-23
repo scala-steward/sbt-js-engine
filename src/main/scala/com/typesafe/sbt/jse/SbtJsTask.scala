@@ -4,7 +4,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import sbt.{Configuration, Def, *}
 import sbt.Keys.*
 import com.typesafe.sbt.web.incremental.OpInputHasher
-import spray.json.*
+import play.api.libs.json.*
 import com.typesafe.sbt.web.*
 import xsbti.{FileConverter, Problem, Severity}
 import com.typesafe.sbt.web.incremental.OpResult
@@ -99,21 +99,19 @@ object SbtJsTask extends AutoPlugin {
   /**
     * For automatic transformation of Json structures.
     */
-  object JsTaskProtocol extends DefaultJsonProtocol {
+  object JsTaskProtocol {
 
-    implicit object FileFormat extends JsonFormat[File] {
-      def write(f: File): JsValue = JsString(f.getCanonicalPath)
+    implicit val FileFormat: Format[File] = new Format[File] {
+      def writes(f: File): JsValue = JsString(f.getCanonicalPath)
 
-      def read(value: JsValue): sbt.File = value match {
-        case s: JsString => new File(s.convertTo[String])
-        case x => deserializationError(s"String expected for a file, instead got $x")
-      }
+      def reads(value: JsValue) =
+        implicitly[Reads[String]].reads(value).map(new File(_))
     }
 
-    implicit val opSuccessFormat: JsonFormat[OpSuccess] = jsonFormat2(OpSuccess.apply)
+    implicit val opSuccessFormat: Format[OpSuccess] = Json.format[OpSuccess]
 
-    implicit object LineBasedProblemFormat extends JsonFormat[LineBasedProblem] {
-      def write(p: LineBasedProblem): JsObject = JsObject(
+    implicit val LineBasedProblemFormat: Format[LineBasedProblem] = new Format[LineBasedProblem] {
+      def writes(p: LineBasedProblem): JsValue = Json.obj(
         "message" -> JsString(p.message),
         "severity" -> {
           p.severity match {
@@ -122,41 +120,40 @@ object SbtJsTask extends AutoPlugin {
             case Severity.Error => JsString("error")
           }
         },
-        "lineNumber" -> JsNumber(p.position.line.get),
-        "characterOffset" -> JsNumber(p.position.offset.get),
+        "lineNumber" -> JsNumber(p.position.line.get.intValue()),
+        "characterOffset" -> JsNumber(p.position.offset.get.intValue()),
         "lineContent" -> JsString(p.position.lineContent),
-        "source" -> FileFormat.write(p.position.sourceFile.get)
+        "source" -> FileFormat.writes(p.position.sourceFile.get)
       )
 
-      def read(value: JsValue): LineBasedProblem = value match {
-        case o: JsObject => new LineBasedProblem(
-          o.fields.get("message").fold("unknown message")(_.convertTo[String]),
-          o.fields.get("severity").fold(Severity.Error) {
+      def reads(value: JsValue): JsResult[LineBasedProblem] = implicitly[Reads[JsObject]].reads(value).map{
+        o => new LineBasedProblem(
+          o.value.get("message").fold("unknown message")(_.as[String]),
+          o.value.get("severity").fold(Severity.Error) {
             case JsString("info") => Severity.Info
             case JsString("warn") => Severity.Warn
             case _ => Severity.Error
           },
-          o.fields.get("lineNumber").fold(0)(_.convertTo[Int]),
-          o.fields.get("characterOffset").fold(0)(_.convertTo[Int]),
-          o.fields.get("lineContent").fold("unknown line content")(_.convertTo[String]),
-          o.fields.get("source").fold(file(""))(_.convertTo[File])
+          o.value.get("lineNumber").fold(0)(_.as[Int]),
+          o.value.get("characterOffset").fold(0)(_.as[Int]),
+          o.value.get("lineContent").fold("unknown line content")(_.as[String]),
+          o.value.get("source").fold(file(""))(_.as[File])
         )
-        case x => deserializationError(s"Object expected for the problem, instead got $x")
       }
 
     }
 
-    implicit object OpResultFormat extends JsonFormat[OpResult] {
+    implicit val OpResultFormat: Format[OpResult] = new Format[OpResult] {
 
-      def write(r: OpResult): JsValue = r match {
+      def writes(r: OpResult): JsValue = r match {
         case OpFailure => JsNull
-        case s: OpSuccess => opSuccessFormat.write(s)
+        case s: OpSuccess => opSuccessFormat.writes(s)
       }
 
-      def read(value: JsValue): OpResult = value match {
-        case o: JsObject => opSuccessFormat.read(o)
-        case JsNull => OpFailure
-        case x => deserializationError(s"Object expected for the op result, instead got $x")
+      def reads(value: JsValue): JsResult[OpResult] = value match {
+        case o: JsObject => opSuccessFormat.reads(o)
+        case JsNull => JsSuccess(OpFailure)
+        case x => JsError(s"Object expected for the op result, instead got $x")
       }
     }
 
@@ -164,8 +161,8 @@ object SbtJsTask extends AutoPlugin {
 
     case class SourceResultPair(result: OpResult, source: File)
 
-    implicit val sourceResultPairFormat: JsonFormat[SourceResultPair] = jsonFormat2(SourceResultPair.apply)
-    implicit val problemResultPairFormat: JsonFormat[ProblemResultsPair] = jsonFormat2(ProblemResultsPair.apply)
+    implicit val sourceResultPairFormat: Format[SourceResultPair] = Json.format[SourceResultPair]
+    implicit val problemResultPairFormat: Format[ProblemResultsPair] = Json.format[ProblemResultsPair]
   }
 
   // Used to signal when the script is sending back structured JSON data
@@ -194,7 +191,7 @@ object SbtJsTask extends AutoPlugin {
           if (out.nonEmpty) {
             stdoutSink(out)
           }
-          results.add(JsonParser(json.drop(1)))
+          results.add(Json.parse(json.drop(1)))
         }
       },
       stderrSink
@@ -222,7 +219,7 @@ object SbtJsTask extends AutoPlugin {
     implicit val fc: FileConverter = conv
 
     val args = immutable.Seq(
-      JsArray(sourceFileMappings.map(x => JsArray(JsString(toFile(x._1).getCanonicalPath), JsString(x._2))).toVector).compactPrint,
+      JsArray(sourceFileMappings.map(x => Json.arr(JsString(toFile(x._1).getCanonicalPath), JsString(x._2))).toVector).toString,
       target.getAbsolutePath,
       options
     )
@@ -231,7 +228,7 @@ object SbtJsTask extends AutoPlugin {
     import JsTaskProtocol.*
     val prp = results.foldLeft(ProblemResultsPair(Nil, Nil)) {
       (cumulative, result) =>
-        val prp = result.convertTo[ProblemResultsPair]
+        val prp = result.as[ProblemResultsPair]
         ProblemResultsPair(
           cumulative.results ++ prp.results,
           cumulative.problems ++ prp.problems
