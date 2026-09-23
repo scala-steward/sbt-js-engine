@@ -5,7 +5,7 @@ import sbt.Keys._
 import sbt.File
 import com.typesafe.sbt.jse.SbtJsTask
 import com.typesafe.sbt.web.SbtWeb
-import spray.json.{JsBoolean, JsObject}
+import play.api.libs.json.Json
 
 object Import {
 
@@ -38,10 +38,10 @@ object SbtHelloJsTask extends AutoPlugin {
 
   val helloJsTaskUnscopedSettings = Seq(
     includeFilter := jsFilter.value,
-    jsOptions := JsObject(
-      "compress" -> JsBoolean(compress.value),
-      "fail" -> JsBoolean(fail.value)
-    ).compactPrint
+    jsOptions := Json.obj(
+      "compress" -> compress.value,
+      "fail" -> fail.value
+    ).toString
   )
 
   override def buildSettings = Project.inTask(hello)(

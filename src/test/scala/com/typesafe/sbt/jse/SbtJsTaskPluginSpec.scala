@@ -2,7 +2,7 @@ package com.typesafe.sbt.jse
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable.Specification
-import spray.json.JsonParser
+import play.api.libs.json.{JsSuccess, Json}
 import java.io.File
 import xsbti.Severity
 import com.typesafe.sbt.web.incremental.OpSuccess
@@ -11,7 +11,7 @@ class SbtJsTaskPluginSpec extends Specification with ScalaCheck {
 
   "the jstask" should {
     "Translate json OpResult/Problems properly" in {
-      val p = JsonParser( s"""
+      val p = Json.parse( s"""
           {
               "problems": [
                   {
@@ -38,7 +38,7 @@ class SbtJsTaskPluginSpec extends Specification with ScalaCheck {
       """)
 
       import SbtJsTask.JsTaskProtocol.*
-      val problemResultsPair = p.convertTo[ProblemResultsPair]
+      val problemResultsPair = p.as[ProblemResultsPair]
       problemResultsPair.problems.size must_== 1
       problemResultsPair.problems.head.position().offset().get() must_== 5
       problemResultsPair.problems.head.position().lineContent() must_== "a = 1"
@@ -60,7 +60,7 @@ class SbtJsTaskPluginSpec extends Specification with ScalaCheck {
 
 
       prop { (doc: ProblemResultsPair) =>
-        val roundTrip = problemResultPairFormat.read(problemResultPairFormat.write(doc))
+        val JsSuccess(roundTrip, _) = problemResultPairFormat.reads(problemResultPairFormat.writes(doc))
 
         roundTrip.results must containTheSameElementsAs(doc.results, sourceResultPairEquality)
         roundTrip.problems must containTheSameElementsAs(doc.problems, lineBasedProblemEquality)

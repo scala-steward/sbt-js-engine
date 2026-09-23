@@ -18,7 +18,7 @@ developers += Developer(
 libraryDependencies ++= Seq(
   "org.specs2" %% "specs2-core" % "4.23.0" % "test",
   "org.specs2" %% "specs2-scalacheck" % "4.23.0" % "test",
-  "io.spray" %% "spray-json" % "1.3.6",
+  "org.playframework" %% "play-json" % "3.1.0-M10",
 
   // Trireme
   "io.apigee.trireme" % "trireme-core" % "0.9.4",
