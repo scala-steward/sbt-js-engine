@@ -18,7 +18,6 @@ import com.typesafe.sbt.web.incremental
 import com.typesafe.sbt.web.CompileProblems
 import com.typesafe.sbt.web.incremental.OpSuccess
 import com.typesafe.sbt.PluginCompat.*
-import sbinary.{Format, Input, Output}
 
 import scala.concurrent.duration.*
 import scala.collection.compat.*
@@ -239,18 +238,6 @@ object SbtJsTask extends AutoPlugin {
         )
     }
     (prp.results.map(sr => sr.source -> sr.result).toMap, prp.problems)
-  }
-
-  /*
-   * For reading/writing binary representations of files.
-   */
-  private implicit object FileFormat extends Format[File] {
-
-    import sbinary.DefaultProtocol.*
-
-    def reads(in: Input): File = file(StringFormat.reads(in))
-
-    def writes(out: Output, fh: File): Unit = StringFormat.writes(out, fh.getAbsolutePath)
   }
 
   /**
